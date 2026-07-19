@@ -5,9 +5,9 @@
 """
 
 import re
-from typing import Any, Self
+from typing import Annotated, Any, Self
 
-from pydantic import Field, PostgresDsn, model_validator
+from pydantic import BeforeValidator, Field, PostgresDsn, UrlConstraints, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.constants import Environment
@@ -23,8 +23,8 @@ class Config(CustomBaseSettings):
     """应用级配置模型。
 
     Attributes:
-        DATABASE_ASYNC_URL: 供应用和异步迁移工具使用的 PostgreSQL 连接地址。
-        DATABASE_POOL_SIZE: 连接池允许维持的最大连接数。
+        DATABASE_ASYNC_URL: 供应用和异步迁移工具使用的 asyncpg 连接地址。
+        DATABASE_POOL_SIZE: 连接池常驻连接数，不包含 SQLAlchemy 的临时溢出连接。
         DATABASE_POOL_TTL: 连接回收时间，单位为秒。
         DATABASE_POOL_PRE_PING: 是否在取出连接前检查连接可用性。
         ENVIRONMENT: 当前运行环境。
@@ -38,7 +38,12 @@ class Config(CustomBaseSettings):
     """
 
     # `...` 让字段在运行时保持必填，同时避免 Pylance 误判 Settings 构造函数参数。
-    DATABASE_ASYNC_URL: PostgresDsn = Field(default=...)
+    # 先还原为字符串，避免已构造的 PostgresDsn 实例跳过 scheme 约束。
+    DATABASE_ASYNC_URL: Annotated[
+        PostgresDsn,
+        UrlConstraints(allowed_schemes=["postgresql+asyncpg"]),
+        BeforeValidator(str),
+    ] = Field(default=...)
     DATABASE_POOL_SIZE: int = Field(default=16, ge=1, le=256)
     DATABASE_POOL_TTL: int = Field(default=60 * 20, ge=0)  # 连接池回收时间（20 分钟）。
     DATABASE_POOL_PRE_PING: bool = True
@@ -98,4 +103,4 @@ if settings.ROOT_PATH:
     app_configs["root_path"] = settings.ROOT_PATH
 
 if not settings.ENVIRONMENT.is_debug:
-    app_configs["openapi_url"] = None  # 部署环境隐藏 OpenAPI 文档。
+    app_configs["openapi_url"] = None  # 生产环境隐藏 OpenAPI 文档。

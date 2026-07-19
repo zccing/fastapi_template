@@ -19,6 +19,7 @@ dependencies = [
 dev = [
     "aiosqlite>=0.21.0",
     "httpx>=0.28.1",
+    "pyright>=1.1.411",
     "pytest>=9.0.0",
     "pytest-asyncio>=1.1.0",
     "ruff>=0.13.0",
@@ -28,3 +29,10 @@ dev = [
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"

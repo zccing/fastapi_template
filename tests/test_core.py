@@ -6,7 +6,7 @@ from typing import get_args
 
 import httpx
 import pytest
-from pydantic import AwareDatetime, ValidationError
+from pydantic import AwareDatetime, PostgresDsn, ValidationError
 from sqlalchemy import Column, Integer, MetaData, Table, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -17,6 +17,7 @@ from src.exceptions import NotFound
 from src.main import app
 from src.models import Base
 from src.schemas import CustomModel, datetime_to_utc_str
+from src.utils import generate_random_alphanum
 
 
 def test_env_example_documents_every_setting() -> None:
@@ -75,11 +76,23 @@ def test_config_rejects_invalid_root_path(root_path: str) -> None:
         )
 
 
-def test_environment_must_be_selected_explicitly(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_environment_must_be_selected_explicitly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("ENVIRONMENT")
+    monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValidationError, match="ENVIRONMENT"):
-        Config(DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL, _env_file=None)
+        Config(DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL)
+
+
+def test_config_requires_asyncpg_database_url() -> None:
+    with pytest.raises(ValidationError, match=r"postgresql\+asyncpg"):
+        Config(
+            DATABASE_ASYNC_URL=PostgresDsn("postgresql://app:app@localhost/app"),
+            ENVIRONMENT=Environment.TESTING,
+        )
 
 
 def test_not_found_has_a_resource_detail() -> None:
@@ -108,6 +121,16 @@ def test_datetime_serialization_is_utc_and_honors_dump_options() -> None:
 
     with pytest.raises(ValidationError, match="timezone"):
         Example(created_at=datetime(2026, 1, 2, 3, 4, 5), value=1)
+
+
+def test_random_alphanum_validates_length() -> None:
+    value = generate_random_alphanum(32)
+
+    assert len(value) == 32
+    assert value.isalnum()
+
+    with pytest.raises(ValueError, match="positive"):
+        generate_random_alphanum(0)
 
 
 async def test_healthcheck_allows_configured_origin_only() -> None:

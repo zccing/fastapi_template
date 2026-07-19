@@ -21,7 +21,7 @@ exclude = [
     "venv",
 ]
 # Match the project's supported Python version.
-target-version = "py314"
+target-version = "py311"
 line-length = 100
 
 [lint]
@@ -40,7 +40,3 @@ ignore = []
 
 [lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]
-
-[lint.mccabe]
-# Unlike Flake8, default to a complexity level of 10.
-max-complexity = 10

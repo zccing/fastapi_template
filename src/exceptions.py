@@ -6,7 +6,8 @@
 
 from collections.abc import Mapping
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException
+from starlette import status
 
 
 class DetailedHTTPException(HTTPException):

@@ -12,12 +12,20 @@ backup_directory="${BACKUP_DIRECTORY:-/backups}"
 mkdir -p -- "$backup_directory"
 
 timestamp=$(date -u +%Y-%m-%d-%H%M%SZ)
-backup_file="${backup_directory}/backup-${timestamp}.dump"
+backup_file=""
+cleanup() {
+  if [ -n "$backup_file" ]; then
+    rm -f -- "$backup_file"
+  fi
+}
 
 # 无论从哪个异常路径退出，都删除未完成的归档。信号处理器显式退出，
 # 确保执行 EXIT trap，而不是让被中断的脚本继续运行。
-trap 'rm -f -- "$backup_file"' 0
+trap cleanup 0
 trap 'exit 1' HUP INT TERM
+
+# 原子创建唯一文件，避免同一秒内并发或重试覆盖已有备份。
+backup_file=$(mktemp "${backup_directory}/backup-${timestamp}.XXXXXX.dump")
 
 printf 'Backup process started.\n'
 
