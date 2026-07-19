@@ -28,12 +28,13 @@ class Config(CustomBaseSettings):
         DATABASE_POOL_TTL: 连接回收时间，单位为秒。
         DATABASE_POOL_PRE_PING: 是否在取出连接前检查连接可用性。
         ENVIRONMENT: 当前运行环境。
-        SENTRY_DSN: 部署环境的 Sentry 数据源地址。
+        SENTRY_DSN: 可选的 Sentry 数据源地址。
         CORS_ORIGINS: 允许跨域访问的明确 Origin 序列。
         CORS_ORIGINS_REGEX: 仅用于非部署环境的跨域 Origin 正则表达式。
         CORS_HEADERS: 允许浏览器跨域发送的请求头序列。
         CORS_ALLOW_CREDENTIALS: 是否允许浏览器携带 Cookie 等凭据。
-        APP_VERSION: 应用版本号，用于部署时生成根路径。
+        APP_VERSION: OpenAPI 展示的应用版本号。
+        ROOT_PATH: 反向代理剥离的应用挂载前缀。
     """
 
     # `...` 让字段在运行时保持必填，同时避免 Pylance 误判 Settings 构造函数参数。
@@ -42,7 +43,7 @@ class Config(CustomBaseSettings):
     DATABASE_POOL_TTL: int = Field(default=60 * 20, ge=0)  # 连接池回收时间（20 分钟）。
     DATABASE_POOL_PRE_PING: bool = True
 
-    ENVIRONMENT: Environment = Environment.PRODUCTION
+    ENVIRONMENT: Environment = Field(default=...)
 
     SENTRY_DSN: str | None = None
 
@@ -55,7 +56,8 @@ class Config(CustomBaseSettings):
     )
     CORS_ALLOW_CREDENTIALS: bool = False
 
-    APP_VERSION: str = Field(default="1", min_length=1)
+    APP_VERSION: str = Field(default="0.1.0", min_length=1)
+    ROOT_PATH: str = Field(default="", pattern=r"^$|^/[^/\s]+(?:/[^/\s]+)*$")
 
     @model_validator(mode="after")
     def validate_runtime_config(self) -> Self:
@@ -65,11 +67,8 @@ class Config(CustomBaseSettings):
             校验通过后的当前配置对象。
 
         Raises:
-            ValueError: Sentry、CORS 或正则配置不满足当前环境的安全要求时抛出。
+            ValueError: CORS 或正则配置不满足当前环境的安全要求时抛出。
         """
-
-        if self.ENVIRONMENT.is_deployed and not self.SENTRY_DSN:
-            raise ValueError("Sentry is not set")
 
         if "*" in self.CORS_ORIGINS and self.CORS_ALLOW_CREDENTIALS:
             raise ValueError("Wildcard CORS cannot be used with credentials")
@@ -91,9 +90,12 @@ class Config(CustomBaseSettings):
 
 settings = Config()
 
-app_configs: dict[str, Any] = {"title": "App API"}
-if settings.ENVIRONMENT.is_deployed:
-    app_configs["root_path"] = f"/v{settings.APP_VERSION}"
+app_configs: dict[str, Any] = {
+    "title": "App API",
+    "version": settings.APP_VERSION,
+}
+if settings.ROOT_PATH:
+    app_configs["root_path"] = settings.ROOT_PATH
 
 if not settings.ENVIRONMENT.is_debug:
     app_configs["openapi_url"] = None  # 部署环境隐藏 OpenAPI 文档。

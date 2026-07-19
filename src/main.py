@@ -32,7 +32,7 @@ async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
         await close_database()
 
 
-if settings.ENVIRONMENT.is_deployed:
+if settings.SENTRY_DSN:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         environment=settings.ENVIRONMENT.value,

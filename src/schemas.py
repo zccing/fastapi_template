@@ -10,18 +10,19 @@ def datetime_to_utc_str(value: datetime) -> str:
     """将时间转换为带 ``Z`` 后缀的 ISO-8601 UTC 字符串。
 
     Args:
-        value: 待序列化的时间。无时区时间按 UTC 解释；有时区时间先转换为 UTC。
+        value: 待序列化的带时区时间。
 
     Returns:
-        精确到秒的 ISO-8601 UTC 时间字符串。
+        保留原始精度的 ISO-8601 UTC 时间字符串。
+
+    Raises:
+        ValueError: 时间没有明确时区时抛出。
     """
 
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    else:
-        value = value.astimezone(UTC)
+    if value.utcoffset() is None:
+        raise ValueError("datetime must be timezone-aware")
 
-    return value.isoformat(timespec="seconds").replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 class CustomModel(BaseModel):
@@ -50,15 +51,3 @@ class CustomModel(BaseModel):
         if isinstance(value, datetime):
             return datetime_to_utc_str(value)
         return value
-
-    def serializable_dict(self, **kwargs: Any) -> dict[str, Any]:
-        """返回可直接编码为 JSON 的模型字典。
-
-        Args:
-            **kwargs: 传递给 ``model_dump`` 的过滤和别名选项，例如 ``exclude``。
-
-        Returns:
-            已完成 JSON 类型转换的字典。
-        """
-
-        return self.model_dump(mode="json", **kwargs)

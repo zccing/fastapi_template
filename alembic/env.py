@@ -13,14 +13,17 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from src.config import settings
-from src.database import metadata
+from src.models import Base
+
+# 新增领域模型后，应在这里显式导入对应 models 模块，使 Table 注册到 Base.metadata。
+# 不使用动态扫描，避免生成迁移时导入并执行无关模块。
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = metadata
+target_metadata = Base.metadata
 
 # ConfigParser 使用百分号插值，连接密码中出现百分号时需要先进行转义。
 config.set_main_option(

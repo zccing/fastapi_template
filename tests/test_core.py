@@ -1,19 +1,22 @@
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import get_args
 
 import httpx
 import pytest
+from pydantic import AwareDatetime, ValidationError
 from sqlalchemy import Column, Integer, MetaData, Table, insert, select
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import src.database as database
 from src.config import Config, settings
-from src.constants import Environment
+from src.constants import DB_NAMING_CONVENTION, Environment
 from src.exceptions import NotFound
 from src.main import app
+from src.models import Base
 from src.schemas import CustomModel, datetime_to_utc_str
-from src.utils import generate_random_alphanum
 
 
 def test_env_example_documents_every_setting() -> None:
@@ -51,6 +54,34 @@ def test_config_rejects_invalid_cors(
         )
 
 
+def test_deployed_config_allows_sentry_to_be_disabled() -> None:
+    config = Config(
+        DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL,
+        ENVIRONMENT=Environment.PRODUCTION,
+        ROOT_PATH="/gateway/api",
+    )
+
+    assert config.SENTRY_DSN is None
+    assert config.ROOT_PATH == "/gateway/api"
+
+
+@pytest.mark.parametrize("root_path", ("v1", "/v1/", "/v1//items", "/v 1"))
+def test_config_rejects_invalid_root_path(root_path: str) -> None:
+    with pytest.raises(ValidationError, match="ROOT_PATH"):
+        Config(
+            DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL,
+            ENVIRONMENT=Environment.TESTING,
+            ROOT_PATH=root_path,
+        )
+
+
+def test_environment_must_be_selected_explicitly(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ENVIRONMENT")
+
+    with pytest.raises(ValidationError, match="ENVIRONMENT"):
+        Config(DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL, _env_file=None)
+
+
 def test_not_found_has_a_resource_detail() -> None:
     exception = NotFound()
 
@@ -59,29 +90,30 @@ def test_not_found_has_a_resource_detail() -> None:
 
 def test_datetime_serialization_is_utc_and_honors_dump_options() -> None:
     class Example(CustomModel):
-        created_at: datetime
+        created_at: AwareDatetime
         value: int
 
     model = Example(
-        created_at=datetime.fromisoformat("2026-01-02T03:04:05+08:00"),
+        created_at=datetime.fromisoformat("2026-01-02T03:04:05.123456+08:00"),
         value=1,
     )
 
-    assert datetime_to_utc_str(model.created_at) == "2026-01-01T19:04:05Z"
-    assert model.serializable_dict(exclude={"value"}) == {"created_at": "2026-01-01T19:04:05Z"}
+    assert datetime_to_utc_str(model.created_at) == "2026-01-01T19:04:05.123456Z"
+    assert model.model_dump(mode="json", exclude={"value"}) == {
+        "created_at": "2026-01-01T19:04:05.123456Z"
+    }
 
+    with pytest.raises(ValueError, match="timezone-aware"):
+        datetime_to_utc_str(datetime(2026, 1, 2, 3, 4, 5))
 
-def test_random_alphanum_validates_length() -> None:
-    value = generate_random_alphanum(32)
-
-    assert len(value) == 32
-    assert value.isalnum()
-
-    with pytest.raises(ValueError, match="positive"):
-        generate_random_alphanum(0)
+    with pytest.raises(ValidationError, match="timezone"):
+        Example(created_at=datetime(2026, 1, 2, 3, 4, 5), value=1)
 
 
 async def test_healthcheck_allows_configured_origin_only() -> None:
+    assert app.version == settings.APP_VERSION
+    assert app.root_path == settings.ROOT_PATH
+
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
@@ -100,20 +132,42 @@ async def test_healthcheck_allows_configured_origin_only() -> None:
     assert "access-control-allow-origin" not in denied.headers
 
 
-async def test_execute_commits_when_it_owns_the_connection(
+def test_orm_base_uses_shared_naming_convention() -> None:
+    assert Base.metadata.naming_convention == DB_NAMING_CONVENTION
+
+
+async def test_db_session_commit_is_explicit_and_uncommitted_changes_roll_back(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    dependency = get_args(database.DBSession)[1]
+    assert dependency.dependency is database.get_db_session
+
     test_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
-    monkeypatch.setattr(database, "engine", test_engine)
+    session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    monkeypatch.setattr(database, "SessionFactory", session_factory)
     table = Table("items", MetaData(), Column("id", Integer, primary_key=True))
 
     try:
         async with test_engine.begin() as connection:
             await connection.run_sync(table.metadata.create_all)
 
-        await database.execute(insert(table).values(id=1))
+        dependency_context = asynccontextmanager(database.get_db_session)
+        async with dependency_context() as session:
+            assert isinstance(session, AsyncSession)
+            await session.execute(insert(table).values(id=1))
+            await session.commit()
 
-        assert await database.fetch_all(select(table)) == [{"id": 1}]
+        async with dependency_context() as session:
+            await session.execute(insert(table).values(id=2))
+
+        with pytest.raises(RuntimeError, match="rollback"):
+            async with dependency_context() as session:
+                await session.execute(insert(table).values(id=3))
+                raise RuntimeError("rollback")
+
+        async with session_factory() as session:
+            result = await session.execute(select(table))
+            assert [dict(row) for row in result.mappings()] == [{"id": 1}]
     finally:
         await test_engine.dispose()

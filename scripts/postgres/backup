@@ -1,17 +1,38 @@
-#!/bin/sh -e
+#!/bin/sh
 
-echo "Backup process started."
+# 命令失败或变量未设置时立即退出；备份可能包含敏感数据，
+# 因此本脚本创建的文件仅允许所有者读取。
+set -eu
+umask 077
 
-export POSTGRES_USER="${POSTGRES_USER}"
+: "${POSTGRES_USER:?POSTGRES_USER is required}"
+: "${POSTGRES_DB:?POSTGRES_DB is required}"
 
-# Save the current date in YYYY-MM-DD format to a variable
-current_datetime=$(date +%Y-%m-%d-%H%M%S)
+backup_directory="${BACKUP_DIRECTORY:-/backups}"
+mkdir -p -- "$backup_directory"
 
-backup_directory="/backups"
-backup_filename="${backup_directory}/backup-${current_datetime}.dump.gz"
+timestamp=$(date -u +%Y-%m-%d-%H%M%SZ)
+backup_file="${backup_directory}/backup-${timestamp}.dump"
 
-# Run pg_dump and compress its output, then save to /backups with the current date in the filename
-pg_dump -Fc app -U "$POSTGRES_USER" | gzip > "$backup_filename"
+# 无论从哪个异常路径退出，都删除未完成的归档。信号处理器显式退出，
+# 确保执行 EXIT trap，而不是让被中断的脚本继续运行。
+trap 'rm -f -- "$backup_file"' 0
+trap 'exit 1' HUP INT TERM
 
+printf 'Backup process started.\n'
 
-echo "Backup has been created and saved to ${backup_filename}"
+pg_dump \
+  --format=custom \
+  --file="$backup_file" \
+  --username="$POSTGRES_USER" \
+  --dbname="$POSTGRES_DB"
+
+# 读取归档目录即可验证 custom archive，无须连接数据库。
+if ! pg_restore --list "$backup_file" >/dev/null; then
+  printf 'Backup archive validation failed.\n' >&2
+  exit 1
+fi
+
+# 归档已完成且验证通过，正常退出时不再删除。
+trap - 0 HUP INT TERM
+printf 'Backup has been created and validated: %s\n' "$backup_file"
