@@ -1,0 +1,46 @@
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+# Match the project's supported Python version.
+target-version = "py314"
+line-length = 100
+
+[lint]
+# Keep the project lint rules in one place.
+select = [
+    "E",
+    "F",
+    "W",
+    "I001",
+    "B",
+    "UP",
+    "S",
+]
+ignore = []
+
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10
