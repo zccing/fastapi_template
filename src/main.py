@@ -4,7 +4,7 @@
 应用入口统一挂载。
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -16,7 +16,7 @@ from src.database import close_database
 
 
 @asynccontextmanager
-async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_application: FastAPI) -> AsyncGenerator[None, None]:
     """管理应用生命周期内的数据库连接池。
 
     Args:
@@ -45,7 +45,7 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_origin_regex=settings.CORS_ORIGINS_REGEX,
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-    allow_methods=("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"),
+    allow_methods=("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"),
     allow_headers=settings.CORS_HEADERS,
 )
 

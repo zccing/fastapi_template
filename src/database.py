@@ -1,6 +1,6 @@
 """SQLAlchemy 异步引擎、Session 工厂和 FastAPI 数据库依赖。"""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
@@ -18,7 +18,7 @@ engine = create_async_engine(
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def get_db_session() -> AsyncIterator[AsyncSession]:
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """提供请求级 Session；写事务由领域顶层 Service 显式提交。
 
     Yields:

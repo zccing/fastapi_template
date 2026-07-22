@@ -1,9 +1,9 @@
-"""Pydantic 模型基础类和统一时间序列化规则。"""
+"""Pydantic 模型基础类和显式 UTC 时间类型。"""
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import AwareDatetime, BaseModel, ConfigDict, PlainSerializer, WithJsonSchema
 
 
 def datetime_to_utc_str(value: datetime) -> str:
@@ -13,7 +13,7 @@ def datetime_to_utc_str(value: datetime) -> str:
         value: 待序列化的带时区时间。
 
     Returns:
-        保留原始精度的 ISO-8601 UTC 时间字符串。
+        不截断微秒值的 ISO-8601 UTC 时间字符串。
 
     Raises:
         ValueError: 时间没有明确时区时抛出。
@@ -25,29 +25,18 @@ def datetime_to_utc_str(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-class CustomModel(BaseModel):
-    """应用响应模型的共享 Pydantic 配置。
+UTCDateTime = Annotated[
+    AwareDatetime,
+    PlainSerializer(datetime_to_utc_str, return_type=str, when_used="json"),
+    WithJsonSchema({"type": "string", "format": "date-time"}, mode="serialization"),
+]
+"""必须携带时区，并在 JSON 中序列化为 UTC ``Z`` 格式的时间类型。"""
 
-    所有直接出现的 ``datetime`` 字段在 JSON 模式下统一转换为 UTC 字符串，
-    同时允许调用方使用字段别名进行输入校验。
-    """
+
+class CustomModel(BaseModel):
+    """允许字段名和别名输入的应用共享 Pydantic 模型。"""
 
     model_config = ConfigDict(
         validate_by_name=True,
         validate_by_alias=True,
     )
-
-    @field_serializer("*", when_used="json", check_fields=False)
-    def serialize_datetime(self, value: Any) -> Any:
-        """序列化字段中的直接 datetime 值。
-
-        Args:
-            value: Pydantic 当前传入的字段值。
-
-        Returns:
-            datetime 对应的 UTC 字符串，或未处理的原始值。
-        """
-
-        if isinstance(value, datetime):
-            return datetime_to_utc_str(value)
-        return value

@@ -7,7 +7,15 @@
 import re
 from typing import Annotated, Any, Self
 
-from pydantic import BeforeValidator, Field, PostgresDsn, UrlConstraints, model_validator
+from pydantic import (
+    AnyHttpUrl,
+    BeforeValidator,
+    Field,
+    PostgresDsn,
+    UrlConstraints,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.constants import Environment
@@ -16,7 +24,12 @@ from src.constants import Environment
 class CustomBaseSettings(BaseSettings):
     """应用设置模型的共享基础配置。"""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        hide_input_in_errors=True,
+    )
 
 
 class Config(CustomBaseSettings):
@@ -45,7 +58,7 @@ class Config(CustomBaseSettings):
         BeforeValidator(str),
     ] = Field(default=...)
     DATABASE_POOL_SIZE: int = Field(default=16, ge=1, le=256)
-    DATABASE_POOL_TTL: int = Field(default=60 * 20, ge=0)  # 连接池回收时间（20 分钟）。
+    DATABASE_POOL_TTL: int = Field(default=60 * 20, ge=1)  # 连接池回收时间（20 分钟）。
     DATABASE_POOL_PRE_PING: bool = True
 
     ENVIRONMENT: Environment = Field(default=...)
@@ -63,6 +76,31 @@ class Config(CustomBaseSettings):
 
     APP_VERSION: str = Field(default="0.1.0", min_length=1)
     ROOT_PATH: str = Field(default="", pattern=r"^$|^/[^/\s]+(?:/[^/\s]+)*$")
+
+    @field_validator("CORS_ORIGINS")
+    @classmethod
+    def normalize_cors_origins(cls, origins: tuple[str, ...]) -> tuple[str, ...]:
+        """校验并规范化浏览器 Origin 白名单。"""
+
+        normalized: list[str] = []
+        for origin in origins:
+            if origin == "*":
+                normalized.append(origin)
+                continue
+
+            url = AnyHttpUrl(origin)
+            if (
+                url.username is not None
+                or url.password is not None
+                or url.path != "/"
+                or url.query is not None
+                or url.fragment is not None
+            ):
+                raise ValueError("CORS origin must contain only scheme, host, and optional port")
+
+            normalized.append(str(url).removesuffix("/"))
+
+        return tuple(dict.fromkeys(normalized))
 
     @model_validator(mode="after")
     def validate_runtime_config(self) -> Self:

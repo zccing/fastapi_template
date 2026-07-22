@@ -60,15 +60,3 @@ class BadRequest(DetailedHTTPException):
 
     STATUS_CODE = status.HTTP_400_BAD_REQUEST
     DETAIL = "Bad request"
-
-
-class NotAuthenticated(DetailedHTTPException):
-    """请求未提供有效的身份凭据。"""
-
-    STATUS_CODE = status.HTTP_401_UNAUTHORIZED
-    DETAIL = "User not authenticated"
-
-    def __init__(self) -> None:
-        """创建带 Bearer 认证挑战头的 401 异常。"""
-
-        super().__init__(headers={"WWW-Authenticate": "Bearer"})
