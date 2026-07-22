@@ -91,7 +91,8 @@ STAGING 保留 OpenAPI 文档用于预发布验证，PRODUCTION 隐藏 `/docs`�
 
 ## 数据库与事务
 
-- 路由通过 `DBSession` 取得请求级 `AsyncSession`，依赖只负责创建和关闭 Session。
+- 路由通过 `DBSession` 取得路径操作级 `AsyncSession`；依赖负责创建 Session，并在响应
+  发送前关闭它。
 - 领域 ORM 模型统一继承 `src.models.Base`；`src.database` 只管理 Engine 和 Session。
 - 只读 Service 直接执行查询，不需要提交。
 - 顶层写 Service 在所有操作成功后显式调用一次 `commit()`；内部 helper 不得提交。

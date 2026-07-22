@@ -29,7 +29,7 @@
 当前模板已经提供：
 
 - Pydantic Settings 应用配置和部署边界校验。
-- SQLAlchemy 异步 Engine、请求级 `AsyncSession` 和 Alembic 异步迁移环境。
+- SQLAlchemy 异步 Engine、路径操作级 `AsyncSession` 和 Alembic 异步迁移环境。
 - CORS、Sentry、FastAPI lifespan 和不访问数据库的存活检查。
 - 共享 ORM Base、Pydantic Base、HTTP 异常和无领域通用工具。
 - Ruff、Pyright、pytest 和 GitHub Actions 检查基线。
@@ -128,6 +128,7 @@ src/
 - 优先使用 `Field`、`AwareDatetime`、`EmailStr`、URL 类型和枚举等内置约束。
 - 字段类型和默认值必须一致。可选整数应写成
   `int | None = Field(default=None, ge=18)`，而不是给 `int` 字段设置 `None` 默认值。
+- Pydantic 和 Settings 必填字段直接声明类型，不使用 `...` 或 `Field(default=...)`。
 
 `src.schemas.UTCDateTime` 的现行契约是：
 
@@ -176,6 +177,8 @@ model_config = SettingsConfigDict(
 - 使用 `Annotated[T, Depends(...)]`，不要为新代码引入默认参数形式的 `Depends`。
 - 存在性、所有权、认证和可复用授权检查放在依赖中；业务写入留在 Service。
 - FastAPI 默认在单次请求内缓存相同依赖；只有明确需要重复执行时才关闭缓存。
+- 响应生成后即可释放的 `yield` 依赖使用 `scope="function"`；只有资源必须覆盖响应发送
+  或流式传输时才使用 `scope="request"`。
 - 复用依赖的路由保持相同路径参数名，例如统一使用 `profile_id`。
 - 依赖是 `async def` 还是 `def` 取决于其实际工作是否可等待；不要让同步 I/O 混入
   异步依赖。
@@ -211,7 +214,7 @@ FastAPI 请求校验默认返回 422。只有项目显式增加统一异常映�
 
 - 连接字段是 `DATABASE_ASYNC_URL`，只接受 `postgresql+asyncpg`。
 - `DATABASE_POOL_TTL` 必须是正整数；`0` 会导致连接在每次取出时被回收，不能表示禁用。
-- 路由通过 `DBSession` 获取请求级 `AsyncSession`。
+- 路由通过 `DBSession` 获取路径操作级 `AsyncSession`，响应发送前关闭 Session。
 - `src.database` 只管理 Engine、SessionFactory、依赖和关闭逻辑。
 - 所有 ORM 模型继承 `src.models.Base`，不要创建第二套 `DeclarativeBase` 或
   `MetaData`。

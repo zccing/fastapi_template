@@ -50,18 +50,17 @@ class Config(CustomBaseSettings):
         ROOT_PATH: 反向代理剥离的应用挂载前缀。
     """
 
-    # `...` 让字段在运行时保持必填，同时避免 Pylance 误判 Settings 构造函数参数。
     # 先还原为字符串，避免已构造的 PostgresDsn 实例跳过 scheme 约束。
     DATABASE_ASYNC_URL: Annotated[
         PostgresDsn,
         UrlConstraints(allowed_schemes=["postgresql+asyncpg"]),
         BeforeValidator(str),
-    ] = Field(default=...)
+    ]
     DATABASE_POOL_SIZE: int = Field(default=16, ge=1, le=256)
     DATABASE_POOL_TTL: int = Field(default=60 * 20, ge=1)  # 连接池回收时间（20 分钟）。
     DATABASE_POOL_PRE_PING: bool = True
 
-    ENVIRONMENT: Environment = Field(default=...)
+    ENVIRONMENT: Environment
 
     SENTRY_DSN: str | None = None
 
@@ -131,7 +130,8 @@ class Config(CustomBaseSettings):
         return self
 
 
-settings = Config()
+# BaseSettings 会从环境变量或 .env 提供必填值，静态分析器无法识别该运行时行为。
+settings = Config()  # pyright: ignore[reportCallIssue]
 
 app_configs: dict[str, Any] = {
     "title": "App API",

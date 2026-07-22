@@ -85,7 +85,9 @@ def test_environment_must_be_selected_explicitly(
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(ValidationError, match="ENVIRONMENT"):
-        Config(DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL)
+        Config(  # pyright: ignore[reportCallIssue]
+            DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL
+        )
 
 
 def test_config_requires_asyncpg_database_url() -> None:
@@ -262,6 +264,7 @@ async def test_db_session_commit_is_explicit_and_uncommitted_changes_roll_back(
 ) -> None:
     dependency = get_args(database.DBSession)[1]
     assert dependency.dependency is database.get_db_session
+    assert dependency.scope == "function"
 
     test_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
     session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
