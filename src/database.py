@@ -18,7 +18,7 @@ engine = create_async_engine(
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_db_session() -> AsyncGenerator[AsyncSession]:
     """提供路径操作作用域的 Session；写事务由领域顶层 Service 显式提交。
 
     Yields:

@@ -16,7 +16,7 @@ from src.database import close_database
 
 
 @asynccontextmanager
-async def lifespan(_application: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(_application: FastAPI) -> AsyncGenerator[None]:
     """管理应用生命周期内的数据库连接池。
 
     Args:
