@@ -4,7 +4,14 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event
+from sqlalchemy.engine.interfaces import DBAPIConnection
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import ConnectionPoolEntry
 
 from src.config import settings
 
@@ -15,6 +22,22 @@ engine = create_async_engine(
     pool_recycle=settings.DATABASE_POOL_TTL,
     pool_pre_ping=settings.DATABASE_POOL_PRE_PING,
 )
+
+
+if engine.dialect.name == "sqlite":
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def enable_sqlite_foreign_keys(
+        dbapi_connection: DBAPIConnection,
+        _connection_record: ConnectionPoolEntry,
+    ) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
+
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 

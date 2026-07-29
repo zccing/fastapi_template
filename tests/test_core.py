@@ -11,7 +11,7 @@ from sqlalchemy import Column, Integer, MetaData, Table, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import src.database as database
-from src.config import Config, settings
+from src.config import Config, DatabaseDsn, settings
 from src.constants import DB_NAMING_CONVENTION, Environment
 from src.exceptions import NotFound
 from src.main import app
@@ -90,10 +90,29 @@ def test_environment_must_be_selected_explicitly(
         )
 
 
-def test_config_requires_asyncpg_database_url() -> None:
-    with pytest.raises(ValidationError, match=r"postgresql\+asyncpg"):
+def test_config_accepts_file_sqlite_url_in_production() -> None:
+    config = Config(
+        DATABASE_ASYNC_URL=cast(DatabaseDsn, "sqlite+aiosqlite:///./db.sqlite3"),
+        ENVIRONMENT=Environment.PRODUCTION,
+    )
+
+    assert str(config.DATABASE_ASYNC_URL) == "sqlite+aiosqlite:///db.sqlite3"
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    (
+        "postgresql://app:app@localhost/app",
+        "sqlite:///./db.sqlite3",
+        "sqlite+aiosqlite:///:memory:",
+        "sqlite+aiosqlite://localhost/db.sqlite3",
+        "sqlite+aiosqlite:///./db.sqlite3?mode=ro",
+    ),
+)
+def test_config_rejects_unsupported_database_url(database_url: str) -> None:
+    with pytest.raises(ValidationError, match="DATABASE_ASYNC_URL"):
         Config(
-            DATABASE_ASYNC_URL=PostgresDsn("postgresql://app:app@localhost/app"),
+            DATABASE_ASYNC_URL=cast(DatabaseDsn, database_url),
             ENVIRONMENT=Environment.TESTING,
         )
 

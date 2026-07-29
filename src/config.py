@@ -9,6 +9,7 @@ from typing import Annotated, Any, Self
 
 from pydantic import (
     AnyHttpUrl,
+    AnyUrl,
     BeforeValidator,
     Field,
     PostgresDsn,
@@ -19,6 +20,19 @@ from pydantic import (
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.constants import Environment
+
+AsyncPostgresDsn = Annotated[
+    PostgresDsn,
+    UrlConstraints(allowed_schemes=["postgresql+asyncpg"]),
+]
+SQLiteDsn = Annotated[
+    AnyUrl,
+    UrlConstraints(allowed_schemes=["sqlite+aiosqlite"]),
+]
+DatabaseDsn = Annotated[
+    AsyncPostgresDsn | SQLiteDsn,
+    BeforeValidator(str),
+]
 
 
 class CustomBaseSettings(BaseSettings):
@@ -36,7 +50,7 @@ class Config(CustomBaseSettings):
     """应用级配置模型。
 
     Attributes:
-        DATABASE_ASYNC_URL: 供应用和异步迁移工具使用的 asyncpg 连接地址。
+        DATABASE_ASYNC_URL: 供应用和异步迁移工具使用的异步数据库连接地址。
         DATABASE_POOL_SIZE: 连接池常驻连接数，不包含 SQLAlchemy 的临时溢出连接。
         DATABASE_POOL_TTL: 连接回收时间，单位为秒。
         DATABASE_POOL_PRE_PING: 是否在取出连接前检查连接可用性。
@@ -50,12 +64,8 @@ class Config(CustomBaseSettings):
         ROOT_PATH: 反向代理剥离的应用挂载前缀。
     """
 
-    # 先还原为字符串，避免已构造的 PostgresDsn 实例跳过 scheme 约束。
-    DATABASE_ASYNC_URL: Annotated[
-        PostgresDsn,
-        UrlConstraints(allowed_schemes=["postgresql+asyncpg"]),
-        BeforeValidator(str),
-    ]
+    # 先还原为字符串，避免已构造的 URL 实例跳过 scheme 约束。
+    DATABASE_ASYNC_URL: DatabaseDsn
     DATABASE_POOL_SIZE: int = Field(default=16, ge=1, le=256)
     DATABASE_POOL_TTL: int = Field(default=60 * 20, ge=1)  # 连接池回收时间（20 分钟）。
     DATABASE_POOL_PRE_PING: bool = True
@@ -75,6 +85,23 @@ class Config(CustomBaseSettings):
 
     APP_VERSION: str = Field(default="0.1.0", min_length=1)
     ROOT_PATH: str = Field(default="", pattern=r"^$|^/[^/\s]+(?:/[^/\s]+)*$")
+
+    @field_validator("DATABASE_ASYNC_URL")
+    @classmethod
+    def validate_database_url(cls, database_url: DatabaseDsn) -> DatabaseDsn:
+        """限制 SQLite 使用没有 authority、查询或片段的文件连接地址。"""
+
+        if isinstance(database_url, AnyUrl) and (
+            database_url.host is not None
+            or database_url.path in (None, "", "/", "/:memory:")
+            or database_url.query is not None
+            or database_url.fragment is not None
+        ):
+            raise ValueError(
+                "SQLite URL must reference a file without authority, query, or fragment"
+            )
+
+        return database_url
 
     @field_validator("CORS_ORIGINS")
     @classmethod

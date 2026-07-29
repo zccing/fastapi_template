@@ -4,33 +4,34 @@
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-> Minimal, production-minded, agent-ready FastAPI backend template with async PostgreSQL,
-> Alembic, strict typing, safe configuration, and no speculative business stack.
+> Minimal, production-minded, agent-ready FastAPI backend template with async PostgreSQL
+> and file-backed SQLite, Alembic, strict typing, and safe configuration.
 
 一个面向生产约束、保持最小结构、适合开发者与代码 Agent 共同维护的 FastAPI 后端模板。
-它提供安全配置边界、SQLAlchemy 异步连接、Alembic、CORS、Sentry、健康检查、严格类型
-检查，以及真实 PostgreSQL CI 验证。
+它提供安全配置边界、SQLAlchemy 异步 PostgreSQL 与文件型 SQLite、Alembic、CORS、
+Sentry、健康检查、严格类型检查，以及两种数据库的迁移验证。
 
 **[Use this template](https://github.com/zccing/fastapi_template/generate)**
 
 ## 核心特性
 
 - Pydantic Settings 配置与部署边界校验，错误信息隐藏原始敏感输入。
-- SQLAlchemy 异步 Engine、路径操作级 `AsyncSession` 和显式事务约定。
-- Alembic 异步迁移环境和共享数据库命名约定。
+- SQLAlchemy 异步 PostgreSQL/SQLite Engine、路径操作级 `AsyncSession` 和显式事务约定。
+- Alembic 异步迁移环境、SQLite batch migration 和共享数据库命名约定。
 - 显式 `UTCDateTime` 类型，不猜测 naive datetime 的时区。
 - CORS、Sentry、FastAPI lifespan，以及不访问数据库的存活检查。
-- Ruff、Pyright strict、pytest，以及 Python 3.14 和 PostgreSQL 18 CI。
+- Ruff、Pyright strict、pytest，以及 Python 3.14、PostgreSQL 18 和 SQLite CI。
 
 模板当前没有业务领域、认证授权、任务队列、定时任务、缓存、前端或管理后台，也不会为
 这些能力预装依赖或创建空目录。代码修改和条件性扩展规则见 [AGENTS.md](./AGENTS.md)。
 
-适合需要自建领域模型、重视异步 PostgreSQL、类型检查和安全默认值的后端项目；不适合
-单文件原型或希望直接获得完整 SaaS 业务栈的场景。
+适合需要自建领域模型、重视类型检查和安全默认值的后端项目；可使用 PostgreSQL，或为
+小型低写并发项目部署文件型 SQLite。不适合单文件原型或完整 SaaS 业务栈。
 
 ## 快速开始
 
-环境要求：Python 3.14 或更高版本、[uv](https://docs.astral.sh/uv/) 和 PostgreSQL。
+环境要求：Python 3.14 或更高版本、[uv](https://docs.astral.sh/uv/)，以及 PostgreSQL 或
+可持久化的 SQLite 文件目录。
 
 可以点击上方 **Use this template**，或使用 GitHub CLI 创建新仓库：
 
@@ -39,7 +40,9 @@ gh repo create my-api --template zccing/fastapi_template --private --clone
 cd my-api
 ```
 
-在项目根目录创建与 `.env` 连接地址匹配的 PostgreSQL 用户和数据库，然后执行：
+执行下列命令。默认配置使用 PostgreSQL，运行前先创建匹配的用户和数据库；使用 SQLite
+时，在复制 `.env` 后、执行迁移前，将 `DATABASE_ASYNC_URL` 改为
+`sqlite+aiosqlite:///./db.sqlite3`，数据库文件会自动创建。
 
 ```shell
 cp .env.example .env
@@ -94,7 +97,7 @@ STAGING 和 PRODUCTION 的密钥应通过受控环境变量或 Secret Manager �
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `DATABASE_ASYNC_URL` | 是 | `postgresql+asyncpg` 异步连接地址 |
+| `DATABASE_ASYNC_URL` | 是 | `postgresql+asyncpg` 或文件型 `sqlite+aiosqlite` 连接地址 |
 | `ENVIRONMENT` | 是 | `LOCAL`、`TESTING`、`STAGING` 或 `PRODUCTION` |
 | `DATABASE_POOL_SIZE` | 否 | 常驻连接池大小，默认 `16`；另有 10 个临时溢出连接 |
 | `DATABASE_POOL_TTL` | 否 | 正整数，默认 `1200` 秒；下次取连接时检查并回收 |
@@ -106,6 +109,10 @@ STAGING 和 PRODUCTION 的密钥应通过受控环境变量或 Secret Manager �
 | `CORS_ORIGINS_REGEX` | 否 | 仅允许在 LOCAL 或 TESTING 使用的 Origin 正则 |
 | `CORS_HEADERS` | 否 | 允许请求头的 JSON 数组 |
 | `CORS_ALLOW_CREDENTIALS` | 否 | 是否允许 Cookie 等浏览器凭据 |
+
+SQLite 只接受普通文件地址，不支持 `:memory:`、authority、查询或片段。部署时把数据库文件
+放在持久化可写卷，并优先保持单应用实例和低写并发；需要多副本或高写并发时使用
+PostgreSQL。应用会为每个 SQLite 连接启用外键约束。
 
 - CORS Origin 只允许 HTTP(S) 协议、主机和可选端口；配置会规范化大小写、默认端口和
   尾部 `/`，并拒绝凭据、路径、查询与片段。部署环境禁止 wildcard 和 Origin 正则；
@@ -134,7 +141,8 @@ STAGING 和 PRODUCTION 的密钥应通过受控环境变量或 Secret Manager �
 
 领域模型继承 `src.models.Base`，使用单数 `snake_case` 表名，并沿用共享命名约定。新增
 领域模型后，在 `alembic/env.py` 显式导入其 `models` 模块；Alembic 不会自动扫描
-`src/`。
+`src/`。迁移环境使用 batch migration 生成 SQLite 可执行的表结构变更，并同时保留
+PostgreSQL 行为。
 
 运行任何连接数据库的 Alembic 命令前，先确认目标环境、主机和数据库且不要输出凭据。
 默认只连接可丢弃的本地或测试数据库；共享、STAGING 或 PRODUCTION 目标需要用户对精确

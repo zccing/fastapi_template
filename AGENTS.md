@@ -3,10 +3,10 @@
 ## 当前基线与模板演进
 
 Python 和依赖约束以 `pyproject.toml` 为准，使用与锁文件策略以 `README.md` 为准。
-当前模板提供 Pydantic Settings 配置与部署校验、SQLAlchemy 异步 Engine 与路径操作级
-`AsyncSession`、Alembic 异步迁移、CORS、Sentry、FastAPI lifespan、不访问数据库的
-存活检查、共享 ORM/Pydantic Base、HTTP 异常、无领域工具，以及 Ruff、Pyright、pytest
-和 CI。
+当前模板提供 Pydantic Settings 配置与部署校验、异步 PostgreSQL 和文件型 SQLite、
+SQLAlchemy 异步 Engine 与路径操作级 `AsyncSession`、Alembic 异步迁移、CORS、Sentry、
+FastAPI lifespan、不访问数据库的存活检查、共享 ORM/Pydantic Base、HTTP 异常、无领域
+工具，以及 Ruff、Pyright、pytest 和 CI。
 
 当前没有业务领域、认证授权、任务队列、定时任务或缓存；只有真实需求触发时才应用
 “条件性扩展”。所有命令默认在仓库根目录执行：
@@ -117,8 +117,10 @@ src/
 
 ### 数据库、事务与 Alembic
 
-- `DATABASE_ASYNC_URL` 只接受 `postgresql+asyncpg`；`DATABASE_POOL_TTL` 必须为正整数，
-  `0` 会使连接每次取出时回收，不能表示禁用。
+- `DATABASE_ASYNC_URL` 只接受 `postgresql+asyncpg` 或文件型 `sqlite+aiosqlite`。SQLite
+  不接受 `:memory:`、authority、查询或片段；每个应用连接启用外键约束。部署 SQLite 时
+  使用持久化可写卷并优先保持单实例、低写并发；需要多副本或高写并发时使用 PostgreSQL。
+- `DATABASE_POOL_TTL` 必须为正整数，`0` 会使连接每次取出时回收，不能表示禁用。
 - 路由通过 `DBSession` 获取路径操作级 `AsyncSession`，响应发送前关闭；`src.database`
   只管理 Engine、SessionFactory、依赖和关闭；ORM 模型均继承 `src.models.Base`，不创建
   第二套 `DeclarativeBase` 或 `MetaData`。
@@ -142,8 +144,8 @@ src/
 1. 继承共享 `Base`，并在 `alembic/env.py` 显式导入领域 `models`。
 2. 运行 `uv run alembic revision --autogenerate -m "..."`。
 3. 人工检查 upgrade、downgrade、可空性、外键、索引、默认值和重命名。
-4. 在可丢弃 PostgreSQL 验证 upgrade、`alembic check`；风险需要时再验证 downgrade 后
-   upgrade。
+4. 在可丢弃 PostgreSQL 和 SQLite 验证 upgrade、`alembic check`；风险需要时再验证
+   downgrade 后 upgrade。
 
 迁移必须静态、确定、可审查，不访问外部 API 决定结构，也不修改已执行的 revision。
 结构迁移在安全可行时提供有意义的 downgrade；不可逆数据迁移不得伪造可恢复性，必须
@@ -188,7 +190,8 @@ src/
   外部集成；新增字段时同步更新隔离值，保留启动检查以阻止遗漏。
 - 用 `app.dependency_overrides` 替换认证或外部服务依赖。Fixture 只恢复自己修改的键，
   不调用 `dependency_overrides.clear()`，也不直接 monkeypatch 路由内部实现。
-- 不涉及 PostgreSQL 特性的纯单元测试可用 SQLite。查询语义、约束、JSON、锁、并发、
-  迁移和 PostgreSQL 特性使用真实 PostgreSQL；模拟数据库的测试不称数据库集成测试。
+- 后端无关的模型、查询和迁移行为在 PostgreSQL 与文件型 SQLite 上验证；PostgreSQL
+  专属类型、JSON、锁和并发语义使用真实 PostgreSQL。模拟数据库的测试不称数据库集成
+  测试。
 - Ruff、格式化和 Pyright 已由项目 CI 覆盖；Review 通常不重复报告这些工具能稳定发现的
   问题，除非 CI 未覆盖或它掩盖了实际缺陷。
