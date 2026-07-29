@@ -215,6 +215,7 @@ def test_random_alphanum_validates_length() -> None:
 
 
 async def test_healthcheck_allows_configured_origin_only() -> None:
+    assert app.title == "FastAPI Template API"
     assert app.version == settings.APP_VERSION
     assert app.root_path == settings.ROOT_PATH
 

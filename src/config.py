@@ -134,7 +134,7 @@ class Config(CustomBaseSettings):
 settings = Config()  # pyright: ignore[reportCallIssue]
 
 app_configs: dict[str, Any] = {
-    "title": "App API",
+    "title": "FastAPI Template API",
     "version": settings.APP_VERSION,
 }
 if settings.ROOT_PATH:

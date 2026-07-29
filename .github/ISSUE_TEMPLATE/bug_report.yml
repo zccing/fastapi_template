@@ -1,0 +1,41 @@
+name: Bug report
+description: 报告可复现的模板行为问题
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。安全漏洞请使用 Security 页面中的私密报告入口，不要在公开 Issue 中披露。
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: 使用的 Release、标签或 commit SHA。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python、操作系统、PostgreSQL 和相关依赖版本。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: 提供最小、可重复执行的步骤或仓库链接，请删除凭据和敏感数据。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true

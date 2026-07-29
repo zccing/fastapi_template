@@ -1,11 +1,36 @@
 # FastAPI Template
 
-一个面向生产约束、保持最小结构的 FastAPI 项目模板。当前提供应用配置、SQLAlchemy
-异步连接、Alembic、CORS、Sentry、健康检查、共享模型与异常以及测试和 CI 基线。
+[![CI](https://github.com/zccing/fastapi_template/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zccing/fastapi_template/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.14-3776AB.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+> Minimal, production-minded, agent-ready FastAPI backend template with async PostgreSQL,
+> Alembic, strict typing, safe configuration, and no speculative business stack.
+
+一个面向生产约束、保持最小结构、适合开发者与代码 Agent 共同维护的 FastAPI 后端模板。
+它提供安全配置边界、SQLAlchemy 异步连接、Alembic、CORS、Sentry、健康检查、严格类型
+检查，以及真实 PostgreSQL CI 验证。
+
+**[Use this template](https://github.com/zccing/fastapi_template/generate)**
+
+## 核心特性
+
+- Pydantic Settings 配置与部署边界校验，错误信息隐藏原始敏感输入。
+- SQLAlchemy 异步 Engine、路径操作级 `AsyncSession` 和显式事务约定。
+- Alembic 异步迁移环境和共享数据库命名约定。
+- 显式 `UTCDateTime` 类型，不猜测 naive datetime 的时区。
+- Ruff、Pyright strict、pytest，以及 Python 3.11/3.14 和 PostgreSQL 18 CI。
+- [AGENTS.md](./AGENTS.md) 记录异步、事务、安全和条件性业务扩展边界。
 
 认证、授权、任务队列、缓存和具体业务领域尚未实现，但其后续实现边界保留在
 [AGENTS.md](./AGENTS.md) 中。真实需求出现前，模板不会为这些能力预装依赖或创建
 空目录。
+
+| 适合 | 不适合 |
+|---|---|
+| 需要自建领域模型的 FastAPI 后端 | 希望直接获得完整 SaaS、前端或管理后台 |
+| 重视异步 PostgreSQL、类型检查和安全默认值 | 希望模板预先决定 JWT、权限、队列或缓存方案 |
+| 希望代码 Agent 遵循明确工程边界的团队 | 只需要单文件原型或教程示例 |
 
 ## 环境要求
 
@@ -15,7 +40,14 @@
 
 ## 快速开始
 
-以下命令默认在仓库根目录执行。运行迁移前，先创建与 `.env` 中连接地址匹配的
+可以点击上方 **Use this template**，或使用 GitHub CLI 创建新仓库：
+
+```shell
+gh repo create my-api --template zccing/fastapi_template --private --clone
+cd my-api
+```
+
+以下命令默认在项目根目录执行。运行迁移前，先创建与 `.env` 中连接地址匹配的
 PostgreSQL 用户和数据库；模板不会自动创建数据库。
 
 ```shell
@@ -37,18 +69,29 @@ uv run pyright
 uv run pytest -q
 ```
 
-本仓库作为模板不提交 `uv.lock`，CI 使用 `uv sync` 重新解析声明的依赖范围，以便及时
-发现上游兼容性问题。生成具体业务项目后，应根据交付方式确定锁文件策略；对需要
-可复现部署的应用，通常应从 `.gitignore` 移除 `uv.lock`、生成并提交锁文件，然后在
-生产环境使用：
+本仓库作为生成源不发布 `uv.lock`。Push、Pull Request 和每周定时 CI 都使用 `uv sync`
+重新解析声明的依赖范围，以发现上游兼容性问题；这意味着模板仓库自身的安装结果会随
+兼容依赖更新而变化。
+
+生成具体业务项目后，应从 `.gitignore` 移除 `uv.lock`、生成并提交该项目自己的锁文件：
 
 ```shell
 uv lock
-uv sync --frozen --no-dev
+git add uv.lock .gitignore
+uv sync --locked --no-dev
 ```
 
-只有明确接受每次部署重新解析依赖时，才在生产环境继续使用无锁的
-`uv sync --no-dev`。
+只有明确接受每次部署重新解析依赖时，才继续使用无锁的 `uv sync --no-dev`。
+
+## 创建业务项目前
+
+通过模板生成仓库后，至少完成以下定制：
+
+1. 修改 `pyproject.toml` 中的项目名、描述和版本。
+2. 修改 `src.config.app_configs` 中的 OpenAPI 标题。
+3. 为目标环境设置数据库地址、CORS 白名单和 Sentry 配置。
+4. 按上节说明生成并提交业务项目自己的 `uv.lock`。
+5. 出现第一个业务用例后再创建领域包，并在 `alembic/env.py` 显式导入领域模型。
 
 ## 配置
 
@@ -242,3 +285,10 @@ src/
 不要为单一实现提前增加 Repository、BaseService、工厂或插件系统。跨领域引用使用
 明确模块名，领域路由统一在 `src.main` 挂载；领域配置、常量或工具文件只在实际需要
 时创建。
+
+## 贡献与安全
+
+提交改动前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。安全漏洞不要通过公开 Issue
+披露，请按照 [SECURITY.md](./SECURITY.md) 使用私密报告入口。
+
+本项目采用 [MIT License](./LICENSE)。
