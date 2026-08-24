@@ -48,7 +48,6 @@ def test_config_rejects_invalid_cors(
         Config(
             DATABASE_ASYNC_URL=settings.DATABASE_ASYNC_URL,
             ENVIRONMENT=environment,
-            SENTRY_DSN="https://public@example.ingest.sentry.io/1",
             CORS_ORIGINS=origins,
             CORS_ALLOW_CREDENTIALS=allow_credentials,
             CORS_ORIGINS_REGEX=origin_regex,
@@ -65,6 +64,28 @@ def test_deployed_config_allows_sentry_to_be_disabled() -> None:
 
     assert config.SENTRY_DSN is None
     assert config.ROOT_PATH == "/gateway/api"
+
+
+def test_sentry_dsn_is_optional_and_validated() -> None:
+    assert settings.SENTRY_DSN is None
+
+    config = Config.model_validate(
+        {
+            "DATABASE_ASYNC_URL": settings.DATABASE_ASYNC_URL,
+            "ENVIRONMENT": Environment.TESTING,
+            "SENTRY_DSN": "https://public@example.ingest.sentry.io/1",
+        }
+    )
+    assert str(config.SENTRY_DSN) == "https://public@example.ingest.sentry.io/1"
+
+    with pytest.raises(ValidationError, match="SENTRY_DSN"):
+        Config.model_validate(
+            {
+                "DATABASE_ASYNC_URL": settings.DATABASE_ASYNC_URL,
+                "ENVIRONMENT": Environment.TESTING,
+                "SENTRY_DSN": "not-a-url",
+            }
+        )
 
 
 @pytest.mark.parametrize("root_path", ("v1", "/v1/", "/v1//items", "/v 1"))

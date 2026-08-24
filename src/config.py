@@ -41,6 +41,7 @@ class CustomBaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        env_ignore_empty=True,
         extra="ignore",
         hide_input_in_errors=True,
     )
@@ -72,7 +73,7 @@ class Config(CustomBaseSettings):
 
     ENVIRONMENT: Environment
 
-    SENTRY_DSN: str | None = None
+    SENTRY_DSN: AnyHttpUrl | None = None
 
     CORS_ORIGINS: tuple[str, ...] = ()
     CORS_ORIGINS_REGEX: str | None = None

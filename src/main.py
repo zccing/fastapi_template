@@ -34,7 +34,7 @@ async def lifespan(_application: FastAPI) -> AsyncGenerator[None]:
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
+        dsn=str(settings.SENTRY_DSN),
         environment=settings.ENVIRONMENT.value,
     )
 
