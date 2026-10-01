@@ -11,7 +11,7 @@ import sentry_sdk
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
-from src.config import app_configs, settings
+from src.config import settings
 from src.database import close_database
 
 
@@ -38,7 +38,13 @@ if settings.SENTRY_DSN:
         environment=settings.ENVIRONMENT.value,
     )
 
-app = FastAPI(**app_configs, lifespan=lifespan)
+app = FastAPI(
+    title="FastAPI Template API",
+    version=settings.APP_VERSION,
+    root_path=settings.ROOT_PATH,
+    openapi_url="/openapi.json" if settings.ENVIRONMENT.is_debug else None,
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,

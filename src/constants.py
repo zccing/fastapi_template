@@ -16,8 +16,8 @@ DB_NAMING_CONVENTION: Final[dict[str, str]] = {
 class Environment(StrEnum):
     """应用支持的运行环境。
 
-    ``LOCAL``、``TESTING`` 和 ``STAGING`` 默认启用调试行为；生产环境默认
-    关闭交互式文档，并要求提供部署所需的外部服务配置。
+    ``LOCAL``、``TESTING`` 和 ``STAGING`` 保留 OpenAPI；生产环境关闭文档。
+    这些选项不启用 FastAPI 的异常调试页面。
     """
 
     LOCAL = "LOCAL"
@@ -27,7 +27,7 @@ class Environment(StrEnum):
 
     @property
     def is_debug(self) -> bool:
-        """判断当前环境是否启用调试行为。
+        """判断当前环境是否保留 OpenAPI 文档。
 
         Returns:
             如果当前环境是本地、测试或预发布环境，则返回 ``True``。

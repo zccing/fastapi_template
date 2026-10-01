@@ -4,57 +4,119 @@
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-> Minimal, production-minded, agent-ready FastAPI backend template with async PostgreSQL
-> and file-backed SQLite, Alembic, strict typing, and safe configuration.
-
-一个面向生产约束、保持最小结构、适合开发者与代码 Agent 共同维护的 FastAPI 后端模板。
-它提供安全配置边界、SQLAlchemy 异步 PostgreSQL 与文件型 SQLite、Alembic、CORS、
-Sentry、健康检查、严格类型检查，以及两种数据库的迁移验证。
+一个精简的 FastAPI 后端模板，提供配置校验、异步 PostgreSQL/SQLite、Alembic 迁移、
+CORS、可选 Sentry，以及 Ruff、Pyright strict 和 pytest。适合从真实业务需求开始构建
+领域模型，不预装认证、任务队列、缓存、前端或管理后台。
 
 **[Use this template](https://github.com/zccing/fastapi_template/generate)**
 
-## 核心特性
-
-- Pydantic Settings 配置与部署边界校验，错误信息隐藏原始敏感输入。
-- SQLAlchemy 异步 PostgreSQL/SQLite Engine、路径操作级 `AsyncSession` 和显式事务约定。
-- Alembic 异步迁移环境、SQLite batch migration 和共享数据库命名约定。
-- 显式 `UTCDateTime` 类型，不猜测 naive datetime 的时区。
-- CORS、Sentry、FastAPI lifespan，以及不访问数据库的存活检查。
-- Ruff、Pyright strict、pytest，以及 Python 3.14、PostgreSQL 18 和 SQLite CI。
-
-模板当前没有业务领域、认证授权、任务队列、定时任务、缓存、前端或管理后台，也不会为
-这些能力预装依赖或创建空目录。代码修改和条件性扩展规则见 [AGENTS.md](./AGENTS.md)。
-
-适合需要自建领域模型、重视类型检查和安全默认值的后端项目；可使用 PostgreSQL，或为
-小型低写并发项目部署文件型 SQLite。不适合单文件原型或完整 SaaS 业务栈。
-
 ## 快速开始
 
-环境要求：Python 3.14 或更高版本、[uv](https://docs.astral.sh/uv/)，以及 PostgreSQL 或
-可持久化的 SQLite 文件目录。
-
-可以点击上方 **Use this template**，或使用 GitHub CLI 创建新仓库：
+需要 Python 3.14+ 和 [uv](https://docs.astral.sh/uv/)。所有命令均在仓库根目录执行。
 
 ```shell
 gh repo create my-api --template zccing/fastapi_template --private --clone
 cd my-api
-```
-
-执行下列命令。默认配置使用 PostgreSQL，运行前先创建匹配的用户和数据库；使用 SQLite
-时，在复制 `.env` 后、执行迁移前，将 `DATABASE_ASYNC_URL` 改为
-`sqlite+aiosqlite:///./db.sqlite3`，数据库文件会自动创建。
-
-```shell
 cp .env.example .env
 uv sync
+```
+
+启动前，在 `.env` 中选择数据库地址：
+
+| 后端 | `DATABASE_ASYNC_URL` 示例 | 准备工作 |
+|---|---|---|
+| PostgreSQL（示例默认值） | `postgresql+asyncpg://app:app@localhost:5432/app` | 创建匹配的本地用户和数据库 |
+| SQLite | `sqlite+aiosqlite:///./db.sqlite3` | 确保父目录可写；文件会自动创建 |
+
+示例凭据仅用于可丢弃的本地环境。确认目标数据库后执行：
+
+```shell
 uv run alembic upgrade head
 uv run uvicorn src.main:app --reload
 ```
 
-存活检查位于 `http://127.0.0.1:8000/healthcheck`。它只判断应用进程是否可响应，不访问
-数据库，因此不能作为数据库 readiness 检查。
+访问 `http://127.0.0.1:8000/docs` 查看 API 文档。
+`GET http://127.0.0.1:8000/healthcheck` 返回 `{"status":"ok"}`，只检测进程是否响应，
+不访问数据库或外部服务，不能替代数据库 readiness 检查。当前没有业务表和 revision，
+`upgrade head` 不会替你创建业务表。
 
-常用质量检查：
+## 配置
+
+配置入口是 [`src/config.py`](src/config.py)，完整示例见 [`.env.example`](.env.example)。
+加载优先级为构造参数、环境变量、当前工作目录的 `.env`、默认值。必填字段没有隐式
+环境默认值；错误信息隐藏原始输入，数据库和 Sentry 地址不参与 Settings 的 repr。
+不要把 `model_dump()` 或 `ValidationError.errors()` 直接写进日志，它们仍可能含原始值。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DATABASE_ASYNC_URL` | 必填 | 只接受 `postgresql+asyncpg` 或文件型 `sqlite+aiosqlite` |
+| `ENVIRONMENT` | 必填 | `LOCAL`、`TESTING`、`STAGING`、`PRODUCTION` |
+| `DATABASE_POOL_SIZE` | `16` | 每个进程的常驻池容量上限；另有 10 个临时溢出连接 |
+| `DATABASE_POOL_TTL` | `1200` | 正整数秒数，下次取连接时检查并回收 |
+| `DATABASE_POOL_PRE_PING` | `true` | 取连接前检查可用性 |
+| `APP_VERSION` | `0.1.0` | OpenAPI 展示版本 |
+| `ROOT_PATH` | 空字符串 | 反向代理剥离的挂载前缀，如 `/gateway` |
+| `SENTRY_DSN` | 未设置 | 设置后启用 Sentry，空字符串显式关闭 |
+| `CORS_ORIGINS` | `[]` | HTTP(S) Origin 的 JSON 数组 |
+| `CORS_ORIGINS_REGEX` | 未设置 | 仅 LOCAL/TESTING 可用，空字符串显式关闭 |
+| `CORS_HEADERS` | `["Content-Type","Authorization","X-API-Key"]` | 允许跨域请求头 |
+| `CORS_ALLOW_CREDENTIALS` | `false` | 是否允许浏览器凭据 |
+
+空环境变量会覆盖 `.env`，不会回退到其中的旧值。`ROOT_PATH=` 清除代理前缀；必填字段、
+数值和布尔字段不接受空字符串，数组清空使用 `[]`。`.env.example` 中的本地示例值可能
+与表中的程序默认值不同。
+
+### 数据库地址
+
+SQLite 路径按原文交给 SQLAlchemy，保留 `..`、空格和中文，不做 HTTP URL 编码。
+相对路径基于进程工作目录；绝对路径使用四个斜杠，例如
+`sqlite+aiosqlite:////srv/app/data/app.db`。父目录需要提前创建，不支持内存数据库、
+authority、查询参数或片段。
+
+从旧模板更新已有项目时，先核实 SQLite 文件的位置：旧版 URL 规范化可能已改写含 `..`、
+空格或中文的路径，修复后会使用配置中原本指定的文件。PostgreSQL 用户名和密码中的
+特殊字符仍需按连接地址规则编码。
+
+### CORS 与文档
+
+- Origin 只允许协议、主机和可选端口；会规范化大小写、默认端口和尾部 `/`，拒绝凭据、
+  路径、查询和片段。STAGING/PRODUCTION 禁止 wildcard 与 Origin 正则；启用凭据时
+  所有环境均禁止 wildcard。
+- LOCAL、TESTING、STAGING 保留 `/docs`、`/redoc` 和 `/openapi.json`，PRODUCTION 关闭。
+  关闭文档不等于认证；公开的 STAGING 应在反向代理层设置访问控制。
+- `ROOT_PATH` 是代理剥离的前缀，不是 API 版本。API 版本在领域 `APIRouter` 上定义。
+
+## 数据库与迁移
+
+应用使用惰性连接的 Engine；lifespan 退出时释放连接池。`create_database_engine()`
+统一应用和测试的池配置，SQLite 的每个应用连接都启用外键约束。
+
+路由通过 `DBSession` 获取 Session，响应发送前关闭。一个 Session 只属于一个请求或
+独立任务；并发和后台任务各自创建 Session。只读 Service 不提交，顶层写 Service
+在全部操作成功后提交一次，helper 只做 `flush()`；关闭 Session 会回滚未提交事务。
+响应需要的关系和延迟字段必须显式加载完成，避免序列化时触发隐式 I/O。
+
+领域模型继承 `src.models.Base`，沿用共享命名约定，并在 `alembic/env.py` 显式导入
+领域 `models` 模块。Alembic 不自动扫描目录，已有迁移环境不需要重新初始化。
+
+连接前确认环境、主机和数据库，不输出凭据。默认只用可丢弃的本地或测试库；共享、
+STAGING、PRODUCTION 目标需要对精确目标的明确授权。
+
+```shell
+uv run alembic revision --autogenerate -m "create item table"
+uv run alembic upgrade head
+uv run alembic check
+```
+
+自动生成只是草稿：检查 upgrade/downgrade、可空性、外键、索引、默认值和重命名。
+文件名含日期、revision ID 和描述，避免同日同名覆盖；生成后先 Ruff 修复，再格式化。
+保留 batch migration 以支持 SQLite 的表结构变更，但仍需在两个后端实际验证。
+
+不要修改已执行的 revision。结构变更安全可行时提供 downgrade；不可逆数据迁移应说明
+前置条件、影响及备份恢复方案。需要验证回退时，只在可丢弃数据库运行
+`uv run alembic downgrade -1`，随后再次 `upgrade head` 和 `alembic check`。
+
+## 测试与质量检查
 
 ```shell
 uv run ruff check .
@@ -63,118 +125,58 @@ uv run pyright
 uv run pytest -q
 ```
 
-## 锁文件策略
+测试为每个 Config 字段注入隔离值，禁用 Sentry，SQLite 使用临时文件；运行测试无需
+修改本机 `.env`。配置、API、数据库、迁移和共享类型的测试分别放在对应 `test_*.py`。
 
-本模板仓库不提交 `uv.lock`。Push、Pull Request 和每周定时 CI 使用 `uv sync` 重新解析
-声明的依赖范围，以尽早发现上游兼容性问题。
+PostgreSQL 行为测试需要显式指定**可丢弃测试库**，会创建并删除 `template_test_*` 表。
+以下是本地示例地址，不要替换成共享或生产库：
 
-通过模板生成业务项目后，应从 `.gitignore` 移除 `uv.lock`，生成并提交自己的锁文件：
+```shell
+TEST_POSTGRES_URL=postgresql+asyncpg://app:app@localhost:5432/app_test uv run pytest -q
+```
+
+未设置 `TEST_POSTGRES_URL` 时，pytest 会明确跳过 PostgreSQL 用例；不会自动连接应用的
+`DATABASE_ASYNC_URL`。CI 在 PostgreSQL 18 上运行数据库行为测试，并在 PostgreSQL 与
+SQLite 上执行 `upgrade head` 和 `alembic check`。Pyright 同时检查应用、测试和迁移代码。
+当前无业务模型，迁移检查验证的是迁移环境，新增模型后仍需验证实际 schema 变更。
+
+## 部署与锁文件
+
+本模板不提交 `uv.lock`；Push、Pull Request 和每周 CI 从干净检出解析依赖范围，以发现
+上游兼容性问题。已有本地锁文件时，`uv sync` 会复用兼容版本；主动验证新版本使用
+`uv lock --upgrade`，然后完整运行检查。
+
+生成业务项目后，从 `.gitignore` 移除 `uv.lock`，生成并提交自己的锁文件，并把业务 CI
+的同步命令改为 `uv sync --locked`：
 
 ```shell
 uv lock
 git add uv.lock .gitignore
 uv sync --locked --no-dev
+uv run --locked --no-dev uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
 
-只有明确接受每次部署重新解析依赖时，才继续使用无锁的 `uv sync --no-dev`。
+部署前通过受控环境变量或 Secret Manager 设置 `ENVIRONMENT=PRODUCTION`、数据库地址、
+CORS 白名单及可选 Sentry。迁移由部署流程单独执行，应用启动不自动迁移；生产命令不使用
+`--reload`。STAGING/PRODUCTION 的凭据不进入 `.env` 镜像、源码、日志或测试快照。
 
-## 生成业务项目后
+每个 worker/副本有自己的池，数据库连接预算至少考虑
+`实例数 * worker 数 * (DATABASE_POOL_SIZE + 10)`。SQLite 使用持久化可写卷，优先单实例、
+低写并发；需要多副本或高写并发时选 PostgreSQL，增加连接池并不能提高 SQLite 写并发。
 
-至少完成以下定制：
+## 项目定制与扩展
 
-1. 修改 `pyproject.toml` 中的项目名、描述和版本。
-2. 修改 `src.config.app_configs` 中的 OpenAPI 标题。
-3. 为目标环境设置数据库地址、CORS 白名单和 Sentry 配置。
-4. 生成并提交业务项目自己的 `uv.lock`。
-5. 出现第一个业务用例后再创建领域包，并在 `alembic/env.py` 显式导入领域模型。
+生成业务项目后至少完成：
 
-## 配置
+1. 修改 `pyproject.toml` 中的项目名、描述、版本，以及 `src/main.py` 的 OpenAPI 标题。
+2. 更新本 README 的仓库链接、徽章、贡献和安全报告入口。
+3. 设置目标环境的数据库、CORS 与外部集成，提交锁文件并调整业务 CI。
+4. 按真实用例创建 `src/{domain}/`，挂载 Router，并在 Alembic 注册模型。
+5. 统一 UTC 输出的业务字段使用 `src.schemas.UTCDateTime`；它要求时区并保留微秒，
+   不会隐式转换普通 datetime。
 
-应用从系统环境变量和当前工作目录的 `.env` 读取配置；因此命令默认在仓库根目录执行。
-完整示例见 [`.env.example`](./.env.example)。本地开发可以使用已被 Git 忽略的 `.env`；
-STAGING 和 PRODUCTION 的密钥应通过受控环境变量或 Secret Manager 注入，不进入源码、
-日志或测试快照。
+日常代码约定见 [AGENTS.md](AGENTS.md)。认证、后台任务、缓存、前端和流式端点的选型
+条件见 [按需扩展](docs/extensions.md)。贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)，
+安全问题通过 [SECURITY.md](SECURITY.md) 的私密入口报告。
 
-| 变量 | 必填 | 说明 |
-|---|---|---|
-| `DATABASE_ASYNC_URL` | 是 | `postgresql+asyncpg` 或文件型 `sqlite+aiosqlite` 连接地址 |
-| `ENVIRONMENT` | 是 | `LOCAL`、`TESTING`、`STAGING` 或 `PRODUCTION` |
-| `DATABASE_POOL_SIZE` | 否 | 常驻连接池大小，默认 `16`；另有 10 个临时溢出连接 |
-| `DATABASE_POOL_TTL` | 否 | 正整数，默认 `1200` 秒；下次取连接时检查并回收 |
-| `DATABASE_POOL_PRE_PING` | 否 | 取连接前是否检查可用性，默认 `true` |
-| `APP_VERSION` | 否 | OpenAPI 展示的应用版本，默认 `0.1.0` |
-| `ROOT_PATH` | 否 | 反向代理剥离的挂载前缀，默认空字符串 |
-| `SENTRY_DSN` | 否 | 设置后启用 Sentry |
-| `CORS_ORIGINS` | 否 | 明确 Origin 的 JSON 数组 |
-| `CORS_ORIGINS_REGEX` | 否 | 仅允许在 LOCAL 或 TESTING 使用的 Origin 正则 |
-| `CORS_HEADERS` | 否 | 允许请求头的 JSON 数组 |
-| `CORS_ALLOW_CREDENTIALS` | 否 | 是否允许 Cookie 等浏览器凭据 |
-
-SQLite 只接受普通文件地址，不支持 `:memory:`、authority、查询或片段。部署时把数据库文件
-放在持久化可写卷，并优先保持单应用实例和低写并发；需要多副本或高写并发时使用
-PostgreSQL。应用会为每个 SQLite 连接启用外键约束。
-
-- CORS Origin 只允许 HTTP(S) 协议、主机和可选端口；配置会规范化大小写、默认端口和
-  尾部 `/`，并拒绝凭据、路径、查询与片段。部署环境禁止 wildcard 和 Origin 正则；
-  启用凭据时任何环境都禁止 wildcard。
-- LOCAL、TESTING 和 STAGING 保留 OpenAPI；PRODUCTION 隐藏 `/docs`、`/redoc` 和
-  `/openapi.json`。若 STAGING 对公网开放，应在反向代理层增加访问控制。
-- `ROOT_PATH` 只表示代理剥离的挂载前缀，不是 API 版本前缀；版本路由应放在领域
-  `APIRouter` 上。
-- 需要统一 UTC 输出的业务时间字段使用 `src.schemas.UTCDateTime`。它拒绝无时区输入，
-  并在 JSON 中输出 UTC `Z`；普通 `datetime` 不会被隐式归一化。
-
-## 数据库与迁移
-
-### Session 与事务
-
-- 路由通过 `DBSession` 获取路径操作级 `AsyncSession`，依赖在响应发送前关闭它。
-- 一个 Session 只属于一个请求或独立任务，不在并发任务间共享，也不传给
-  `BackgroundTasks` 或独立 Worker。
-- 只读 Service 不提交；顶层写 Service 在全部操作成功后提交一次，helper 不提交。
-- 需要数据库生成值时使用 `flush()`；提交前异常由 Session 关闭回滚未提交事务。
-- 响应所需关系和延迟字段在 Session 有效期内显式加载，不在序列化时触发隐式 I/O。
-
-详细事务、查询和异步边界见 [AGENTS.md](./AGENTS.md)。
-
-### 模型与迁移
-
-领域模型继承 `src.models.Base`，使用单数 `snake_case` 表名，并沿用共享命名约定。新增
-领域模型后，在 `alembic/env.py` 显式导入其 `models` 模块；Alembic 不会自动扫描
-`src/`。迁移环境使用 batch migration 生成 SQLite 可执行的表结构变更，并同时保留
-PostgreSQL 行为。
-
-运行任何连接数据库的 Alembic 命令前，先确认目标环境、主机和数据库且不要输出凭据。
-默认只连接可丢弃的本地或测试数据库；共享、STAGING 或 PRODUCTION 目标需要用户对精确
-目标的明确授权。
-
-```shell
-uv run alembic revision --autogenerate -m "create item table"
-uv run alembic upgrade head
-uv run alembic check
-```
-
-`--autogenerate` 只生成草稿。提交前检查 upgrade、downgrade、可空性、外键、索引、默认值
-和重命名；不要修改已执行的 revision。需要验证回退时，只在可丢弃数据库执行：
-
-```shell
-uv run alembic downgrade -1
-uv run alembic upgrade head
-```
-
-迁移必须静态、确定、可审查。结构迁移在安全可行时提供有意义的 downgrade；不可逆数据
-迁移不得伪造可恢复性，必须说明范围、前置条件及备份恢复方案。
-
-## 目录与扩展
-
-当前 `src/` 只包含应用级基础设施。出现真实业务后，在 `src/{domain}/` 中按需创建
-`router.py`、`schemas.py`、`models.py`、`service.py` 等实际使用的模块，并在
-`src.main` 挂载领域路由。认证授权、后台任务、缓存、领域配置、前端和流式响应的触发
-条件与实现边界见 [AGENTS.md](./AGENTS.md)，不要提前搭建空结构。
-
-## 贡献与安全
-
-提交改动前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。安全漏洞不要通过公开 Issue
-披露，请按照 [SECURITY.md](./SECURITY.md) 使用私密报告入口。
-
-本项目采用 [MIT License](./LICENSE)。
+本项目采用 [MIT License](LICENSE)。

@@ -13,7 +13,7 @@ dependencies = [
     "asyncpg>=0.29.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
-    "sqlalchemy>=2.0.51",
+    "sqlalchemy[asyncio]>=2.0.51",
     "uvicorn>=0.40.0",
 ]
 
@@ -32,7 +32,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "alembic"]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 venvPath = "."

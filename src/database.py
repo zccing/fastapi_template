@@ -7,37 +7,44 @@ from fastapi import Depends
 from sqlalchemy import event
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.pool import ConnectionPoolEntry
 
-from src.config import settings
-
-# 引擎只在首次执行数据库操作时建立实际连接，应用关闭时由 lifespan 负责释放连接池。
-engine = create_async_engine(
-    str(settings.DATABASE_ASYNC_URL),
-    pool_size=settings.DATABASE_POOL_SIZE,
-    pool_recycle=settings.DATABASE_POOL_TTL,
-    pool_pre_ping=settings.DATABASE_POOL_PRE_PING,
-)
+from src.config import Config, settings
 
 
-if engine.dialect.name == "sqlite":
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def enable_sqlite_foreign_keys(
-        dbapi_connection: DBAPIConnection,
-        _connection_record: ConnectionPoolEntry,
-    ) -> None:
-        cursor = dbapi_connection.cursor()
-        try:
-            cursor.execute("PRAGMA foreign_keys=ON")
-        finally:
-            cursor.close()
+def _enable_sqlite_foreign_keys(
+    dbapi_connection: DBAPIConnection,
+    _connection_record: ConnectionPoolEntry,
+) -> None:
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
 
 
+def create_database_engine(config: Config) -> AsyncEngine:
+    """为应用或隔离测试创建惰性连接引擎；调用方负责 dispose。"""
+
+    database_engine = create_async_engine(
+        config.DATABASE_ASYNC_URL,
+        pool_size=config.DATABASE_POOL_SIZE,
+        pool_recycle=config.DATABASE_POOL_TTL,
+        pool_pre_ping=config.DATABASE_POOL_PRE_PING,
+    )
+    if database_engine.dialect.name == "sqlite":
+        event.listen(database_engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
+
+    return database_engine
+
+
+# 首次数据库操作才建立连接，应用关闭时由 lifespan 释放连接池。
+engine = create_database_engine(settings)
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 

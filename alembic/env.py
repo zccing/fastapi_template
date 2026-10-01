@@ -28,7 +28,7 @@ target_metadata = Base.metadata
 # ConfigParser 使用百分号插值，连接密码中出现百分号时需要先进行转义。
 config.set_main_option(
     "sqlalchemy.url",
-    str(settings.DATABASE_ASYNC_URL).replace("%", "%%"),
+    settings.DATABASE_ASYNC_URL.replace("%", "%%"),
 )
 
 
@@ -55,7 +55,7 @@ def run_migrations_offline() -> None:
     """在不建立数据库连接的情况下生成迁移 SQL。"""
 
     context.configure(
-        url=str(settings.DATABASE_ASYNC_URL),
+        url=settings.DATABASE_ASYNC_URL,
         target_metadata=target_metadata,
         compare_type=True,
         compare_server_default=True,

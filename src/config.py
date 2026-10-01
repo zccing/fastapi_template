@@ -5,34 +5,19 @@
 """
 
 import re
-from typing import Annotated, Any, Self
+from typing import Self
 
 from pydantic import (
     AnyHttpUrl,
-    AnyUrl,
-    BeforeValidator,
     Field,
-    PostgresDsn,
-    UrlConstraints,
     field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 from src.constants import Environment
-
-AsyncPostgresDsn = Annotated[
-    PostgresDsn,
-    UrlConstraints(allowed_schemes=["postgresql+asyncpg"]),
-]
-SQLiteDsn = Annotated[
-    AnyUrl,
-    UrlConstraints(allowed_schemes=["sqlite+aiosqlite"]),
-]
-DatabaseDsn = Annotated[
-    AsyncPostgresDsn | SQLiteDsn,
-    BeforeValidator(str),
-]
 
 
 class CustomBaseSettings(BaseSettings):
@@ -41,7 +26,7 @@ class CustomBaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        env_ignore_empty=True,
+        env_ignore_empty=False,
         extra="ignore",
         hide_input_in_errors=True,
     )
@@ -65,15 +50,15 @@ class Config(CustomBaseSettings):
         ROOT_PATH: 反向代理剥离的应用挂载前缀。
     """
 
-    # 先还原为字符串，避免已构造的 URL 实例跳过 scheme 约束。
-    DATABASE_ASYNC_URL: DatabaseDsn
+    # SQLAlchemy 地址不是 HTTP URL；保留原始路径，尤其是 SQLite 的相对路径和文件名。
+    DATABASE_ASYNC_URL: str = Field(repr=False)
     DATABASE_POOL_SIZE: int = Field(default=16, ge=1, le=256)
     DATABASE_POOL_TTL: int = Field(default=60 * 20, ge=1)  # 连接池回收时间（20 分钟）。
     DATABASE_POOL_PRE_PING: bool = True
 
     ENVIRONMENT: Environment
 
-    SENTRY_DSN: AnyHttpUrl | None = None
+    SENTRY_DSN: AnyHttpUrl | None = Field(default=None, repr=False)
 
     CORS_ORIGINS: tuple[str, ...] = ()
     CORS_ORIGINS_REGEX: str | None = None
@@ -89,20 +74,41 @@ class Config(CustomBaseSettings):
 
     @field_validator("DATABASE_ASYNC_URL")
     @classmethod
-    def validate_database_url(cls, database_url: DatabaseDsn) -> DatabaseDsn:
-        """限制 SQLite 使用没有 authority、查询或片段的文件连接地址。"""
+    def validate_database_url(cls, database_url: str) -> str:
+        """按实际驱动的语法校验地址，不规范化或编码数据库路径。"""
 
-        if isinstance(database_url, AnyUrl) and (
-            database_url.host is not None
-            or database_url.path in (None, "", "/", "/:memory:")
-            or database_url.query is not None
-            or database_url.fragment is not None
+        try:
+            url = make_url(database_url)
+        except ArgumentError, ValueError:
+            raise ValueError("Invalid database URL") from None
+
+        if url.drivername not in {"postgresql+asyncpg", "sqlite+aiosqlite"}:
+            raise ValueError("Database driver must be postgresql+asyncpg or sqlite+aiosqlite")
+
+        if url.drivername == "sqlite+aiosqlite" and (
+            any(value is not None for value in (url.username, url.password, url.host, url.port))
+            or url.database in (None, "", ":memory:")
+            or "?" in database_url
+            or "#" in database_url
         ):
             raise ValueError(
                 "SQLite URL must reference a file without authority, query, or fragment"
             )
 
+        if url.drivername == "postgresql+asyncpg":
+            if not url.host or any(char.isspace() for char in url.host):
+                raise ValueError("PostgreSQL URL must include a host")
+            if url.port is not None and not 0 < url.port <= 65535:
+                raise ValueError("PostgreSQL port must be between 1 and 65535")
+
         return database_url
+
+    @field_validator("SENTRY_DSN", "CORS_ORIGINS_REGEX", mode="before")
+    @classmethod
+    def empty_optional_setting(cls, value: object) -> object:
+        """显式空值关闭可选能力，不能回退到 .env 中的旧值。"""
+
+        return None if value == "" else value
 
     @field_validator("CORS_ORIGINS")
     @classmethod
@@ -160,13 +166,3 @@ class Config(CustomBaseSettings):
 
 # BaseSettings 会从环境变量或 .env 提供必填值，静态分析器无法识别该运行时行为。
 settings = Config()  # pyright: ignore[reportCallIssue]
-
-app_configs: dict[str, Any] = {
-    "title": "FastAPI Template API",
-    "version": settings.APP_VERSION,
-}
-if settings.ROOT_PATH:
-    app_configs["root_path"] = settings.ROOT_PATH
-
-if not settings.ENVIRONMENT.is_debug:
-    app_configs["openapi_url"] = None  # 生产环境隐藏 OpenAPI 文档。

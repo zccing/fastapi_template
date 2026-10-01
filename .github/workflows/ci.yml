@@ -95,6 +95,11 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
+      - name: Test database behavior
+        env:
+          TEST_POSTGRES_URL: postgresql+asyncpg://app:app@localhost:5432/app
+        run: uv run pytest -q tests/test_database.py
+
       - name: Apply migrations
         run: uv run alembic upgrade head
 
